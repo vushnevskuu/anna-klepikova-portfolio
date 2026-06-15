@@ -1,45 +1,73 @@
 import { useEffect, useRef, type RefObject } from 'react'
+import type { ScrollLabConfig, ScrollLabDebugState } from '../config/scrollLabConfig'
 
 type UseScrollSequenceOptions = {
   length: number
-  activeIndexRef: RefObject<number>
-  onIndexChange: (index: number) => void
+  config: ScrollLabConfig
+  enqueueSteps: (direction: 1 | -1, stepCount: number) => void
   containerRef: RefObject<HTMLElement | null>
+  publishDebugState?: (patch: Partial<ScrollLabDebugState>) => void
   enabled?: boolean
+  onRegisterControls?: (controls: { resetGestureLock: () => void }) => void
 }
 
-const BASE_THRESHOLD = 100
-const MIN_THRESHOLD = 40
-const MAX_THRESHOLD = 120
-const MAX_STEPS_PER_FRAME = 3
+const GESTURE_BURST_GAP_MS = 72
 
-function normalizeDeltaY(event: WheelEvent): number {
-  let delta = event.deltaY
-  switch (event.deltaMode) {
-    case WheelEvent.DOM_DELTA_LINE:
-      delta *= 16
-      break
-    case WheelEvent.DOM_DELTA_PAGE:
-      delta *= window.innerHeight
-      break
-    default:
-      break
+function normalizeWheelDelta(event: WheelEvent): number {
+  if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+    return event.deltaY * 16
   }
-  return delta
+
+  if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+    return event.deltaY * window.innerHeight
+  }
+
+  return event.deltaY
+}
+
+function getVelocityStepCount(absoluteDelta: number, velocity: number): number {
+  if (velocity > 4.5 || absoluteDelta > 700) {
+    return 4
+  }
+
+  if (velocity > 3 || absoluteDelta > 450) {
+    return 3
+  }
+
+  if (velocity > 1.8 || absoluteDelta > 260) {
+    return 2
+  }
+
+  return 1
 }
 
 export function useScrollSequence({
   length,
-  activeIndexRef,
-  onIndexChange,
+  config,
+  enqueueSteps,
   containerRef,
+  publishDebugState,
   enabled = true,
+  onRegisterControls,
 }: UseScrollSequenceOptions): void {
-  const accumulatedDelta = useRef(0)
-  const lastEventTime = useRef(0)
-  const rafId = useRef<number | null>(null)
-  const onIndexChangeRef = useRef(onIndexChange)
-  onIndexChangeRef.current = onIndexChange
+  const accumulatedDeltaRef = useRef(0)
+  const smoothedVelocityRef = useRef(0)
+  const lastWheelTimeRef = useRef(0)
+  const lastWheelBurstTimeRef = useRef(0)
+  const gestureEndTimerRef = useRef<number | null>(null)
+  const lastDirectionRef = useRef<1 | -1 | 0>(0)
+  const gestureLockedRef = useRef(false)
+  const cooldownUntilRef = useRef(0)
+  const gestureStartedAtRef = useRef(0)
+  const enqueueStepsRef = useRef(enqueueSteps)
+  const configRef = useRef(config)
+  const publishDebugStateRef = useRef(publishDebugState)
+  const onRegisterControlsRef = useRef(onRegisterControls)
+
+  enqueueStepsRef.current = enqueueSteps
+  configRef.current = config
+  publishDebugStateRef.current = publishDebugState
+  onRegisterControlsRef.current = onRegisterControls
 
   useEffect(() => {
     const container = containerRef.current
@@ -47,61 +75,232 @@ export function useScrollSequence({
       return undefined
     }
 
-    const processAccumulated = () => {
-      rafId.current = null
-      const delta = accumulatedDelta.current
+    const publish = (patch: Partial<ScrollLabDebugState>) => {
+      publishDebugStateRef.current?.({
+        scrollMode: configRef.current.scrollMode,
+        ...patch,
+      })
+    }
 
-      if (Math.abs(delta) < MIN_THRESHOLD) {
+    const resetGestureLock = () => {
+      accumulatedDeltaRef.current = 0
+      smoothedVelocityRef.current = 0
+      lastDirectionRef.current = 0
+      gestureLockedRef.current = false
+      if (gestureEndTimerRef.current !== null) {
+        window.clearTimeout(gestureEndTimerRef.current)
+        gestureEndTimerRef.current = null
+      }
+      publish({
+        gestureActive: false,
+        gestureLocked: false,
+        accumulatedDelta: 0,
+        currentDirection: 0,
+      })
+    }
+
+    onRegisterControlsRef.current?.({ resetGestureLock })
+
+    const resetGesture = () => {
+      resetGestureLock()
+      publish({
+        lastGestureDuration: performance.now() - gestureStartedAtRef.current,
+      })
+    }
+
+    const scheduleGestureEnd = () => {
+      if (gestureEndTimerRef.current !== null) {
+        window.clearTimeout(gestureEndTimerRef.current)
+      }
+
+      gestureEndTimerRef.current = window.setTimeout(() => {
+        gestureEndTimerRef.current = null
+        resetGesture()
+      }, configRef.current.gestureEndDelay)
+    }
+
+    const applyDirection = (rawDirection: 1 | -1): 1 | -1 => {
+      return configRef.current.invertDirection ? (-rawDirection as 1 | -1) : rawDirection
+    }
+
+    const maybeResetDirection = (direction: 1 | -1) => {
+      if (
+        configRef.current.resetOnDirectionChange &&
+        lastDirectionRef.current !== 0 &&
+        direction !== lastDirectionRef.current
+      ) {
+        accumulatedDeltaRef.current = 0
+      }
+      lastDirectionRef.current = direction
+    }
+
+    const enqueueFromWheel = (direction: 1 | -1, stepCount: number) => {
+      const appliedDirection = applyDirection(direction)
+      maybeResetDirection(appliedDirection)
+      enqueueStepsRef.current(appliedDirection, stepCount)
+
+      if (
+        configRef.current.scrollMode === 'gesture-snap' ||
+        configRef.current.oneGestureOnePhoto
+      ) {
+        gestureLockedRef.current = true
+        accumulatedDeltaRef.current = 0
+      }
+
+      publish({
+        gestureLocked: gestureLockedRef.current,
+        accumulatedDelta: accumulatedDeltaRef.current,
+        currentDirection: appliedDirection,
+      })
+    }
+
+    const onWheel = (event: WheelEvent) => {
+      const target = event.target
+      if (!(target instanceof Node) || !container.contains(target)) {
+        return
+      }
+
+      event.preventDefault()
+
+      const currentConfig = configRef.current
+      const delta = normalizeWheelDelta(event)
+      if (delta === 0) {
         return
       }
 
       const now = performance.now()
-      const elapsed = Math.max(now - lastEventTime.current, 1)
-      const velocity = Math.abs(delta) / elapsed
-      const velocityFactor = Math.min(Math.max(velocity / 1.5, 1), 5)
-      const effectiveThreshold = Math.max(
-        MIN_THRESHOLD,
-        Math.min(MAX_THRESHOLD, BASE_THRESHOLD / velocityFactor),
-      )
+      const gapSinceLastWheel = now - lastWheelBurstTimeRef.current
+      const isNewGesture = gapSinceLastWheel > GESTURE_BURST_GAP_MS
 
-      let steps = Math.floor(Math.abs(delta) / effectiveThreshold)
-      steps = Math.min(steps, MAX_STEPS_PER_FRAME)
+      if (gestureStartedAtRef.current === 0 || !publishDebugStateRef.current) {
+        gestureStartedAtRef.current = now
+      }
 
-      if (steps === 0) {
+      if (currentConfig.scrollMode === 'cooldown-snap' && now < cooldownUntilRef.current) {
+        publish({ gestureLocked: true, lastWheelDelta: delta })
+        lastWheelBurstTimeRef.current = now
         return
       }
 
-      const direction = delta > 0 ? 1 : -1
-      accumulatedDelta.current -= direction * steps * effectiveThreshold
-
-      const current = activeIndexRef.current ?? 0
-      const next = Math.max(0, Math.min(length - 1, current + direction * steps))
-
-      if (next !== current) {
-        onIndexChangeRef.current(next)
+      if (
+        (currentConfig.scrollMode === 'gesture-snap' || currentConfig.oneGestureOnePhoto) &&
+        gestureLockedRef.current &&
+        !isNewGesture
+      ) {
+        publish({
+          gestureActive: true,
+          gestureLocked: true,
+          lastWheelDelta: delta,
+        })
+        scheduleGestureEnd()
+        lastWheelBurstTimeRef.current = now
+        return
       }
-    }
 
-    const scheduleProcess = () => {
-      if (rafId.current === null) {
-        rafId.current = requestAnimationFrame(processAccumulated)
+      if (gestureLockedRef.current && isNewGesture) {
+        gestureLockedRef.current = false
+        accumulatedDeltaRef.current = 0
+        smoothedVelocityRef.current = 0
       }
+
+      const rawDirection: 1 | -1 = delta > 0 ? 1 : -1
+      maybeResetDirection(applyDirection(rawDirection))
+
+      const elapsed = Math.max(now - lastWheelTimeRef.current, 8)
+      const instantaneousVelocity = Math.abs(delta) / elapsed
+      smoothedVelocityRef.current =
+        smoothedVelocityRef.current * 0.75 + instantaneousVelocity * 0.25
+
+      lastWheelTimeRef.current = now
+      accumulatedDeltaRef.current += delta
+
+      publish({
+        gestureActive: true,
+        gestureLocked: gestureLockedRef.current,
+        accumulatedDelta: accumulatedDeltaRef.current,
+        currentDirection: lastDirectionRef.current,
+        lastWheelDelta: delta,
+      })
+
+      scheduleGestureEnd()
+
+      switch (currentConfig.scrollMode) {
+        case 'raw-wheel': {
+          const minDelta = Math.max(currentConfig.minimumWheelDelta, 1)
+          if (Math.abs(delta) < minDelta) {
+            break
+          }
+          enqueueFromWheel(rawDirection, 1)
+          break
+        }
+        case 'cooldown-snap': {
+          if (Math.abs(accumulatedDeltaRef.current) < currentConfig.wheelThreshold) {
+            break
+          }
+          enqueueFromWheel(rawDirection, 1)
+          accumulatedDeltaRef.current = 0
+          cooldownUntilRef.current = now + currentConfig.transitionLockDuration
+          break
+        }
+        case 'velocity-experimental': {
+          if (Math.abs(accumulatedDeltaRef.current) < currentConfig.wheelThreshold) {
+            break
+          }
+          const stepCount = Math.min(
+            getVelocityStepCount(
+              Math.abs(accumulatedDeltaRef.current),
+              smoothedVelocityRef.current,
+            ),
+            currentConfig.maxStepsPerGesture,
+            4,
+          )
+          enqueueFromWheel(rawDirection, stepCount)
+          accumulatedDeltaRef.current -=
+            rawDirection * currentConfig.wheelThreshold * stepCount
+          break
+        }
+        case 'gesture-snap':
+        case 'threshold-snap':
+        default: {
+          if (Math.abs(accumulatedDeltaRef.current) < currentConfig.wheelThreshold) {
+            break
+          }
+
+          const stepCount =
+            currentConfig.scrollMode === 'gesture-snap' ||
+            currentConfig.oneGestureOnePhoto
+              ? 1
+              : Math.min(
+                  getVelocityStepCount(
+                    Math.abs(accumulatedDeltaRef.current),
+                    smoothedVelocityRef.current,
+                  ),
+                  currentConfig.maxStepsPerGesture,
+                  4,
+                )
+
+          enqueueFromWheel(rawDirection, stepCount)
+
+          if (stepCount === 1 && smoothedVelocityRef.current < 1.8) {
+            accumulatedDeltaRef.current = 0
+          } else {
+            accumulatedDeltaRef.current -=
+              rawDirection * currentConfig.wheelThreshold * stepCount
+          }
+          break
+        }
+      }
+
+      lastWheelBurstTimeRef.current = now
     }
 
-    const onWheel = (event: WheelEvent) => {
-      event.preventDefault()
-      lastEventTime.current = performance.now()
-      accumulatedDelta.current += normalizeDeltaY(event)
-      scheduleProcess()
-    }
-
-    container.addEventListener('wheel', onWheel, { passive: false })
+    window.addEventListener('wheel', onWheel, { passive: false, capture: true })
 
     return () => {
-      container.removeEventListener('wheel', onWheel)
-      if (rafId.current !== null) {
-        cancelAnimationFrame(rafId.current)
+      window.removeEventListener('wheel', onWheel, { capture: true })
+      if (gestureEndTimerRef.current !== null) {
+        window.clearTimeout(gestureEndTimerRef.current)
       }
     }
-  }, [activeIndexRef, containerRef, enabled, length])
+  }, [containerRef, enabled, length])
 }

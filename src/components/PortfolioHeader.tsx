@@ -13,12 +13,15 @@ export function PortfolioHeader({ layout }: PortfolioHeaderProps) {
         data-node-id={contactsNodeId}
       >
         <a
-          className="portfolio-contacts__item"
+          className="portfolio-contacts__item portfolio-contacts__item--instagram"
           href="https://instagram.com/aaklepi"
           target="_blank"
           rel="noopener noreferrer"
         >
-          @aaklepi
+          <span className="portfolio-contacts__at" aria-hidden="true">
+            @
+          </span>
+          aaklepi
         </a>
         <a className="portfolio-contacts__item" href="mailto:aklepi1122@gmail.com">
           aklepi1122@gmail.com

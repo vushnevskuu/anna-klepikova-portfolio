@@ -1,0 +1,324 @@
+.portfolio-transition-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  background: transparent;
+}
+
+.portfolio-image-layer {
+  opacity: 0;
+  transform: none;
+  transition: none;
+}
+
+.portfolio-image-layer.is-active {
+  opacity: 1;
+}
+
+.portfolio-image-layer.previous {
+  z-index: 0;
+}
+
+.portfolio-image-layer.current {
+  z-index: 1;
+}
+
+@keyframes portfolio-crossfade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes portfolio-crossfade-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes portfolio-soft-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--translate-distance, 4px));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes portfolio-soft-slide-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(calc(var(--translate-distance, 4px) * -1));
+  }
+}
+
+@keyframes portfolio-scale-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(calc(1 - var(--scale-amount, 0.005)));
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes portfolio-scale-fade-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(calc(1 + var(--scale-amount, 0.005)));
+  }
+}
+
+@keyframes portfolio-film-blink-in {
+  0% {
+    opacity: 0;
+  }
+
+  45% {
+    opacity: 0.82;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes portfolio-film-blink-out {
+  0% {
+    opacity: 1;
+  }
+
+  35% {
+    opacity: 0.82;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes portfolio-exposure-pulse {
+  0% {
+    opacity: 0;
+  }
+
+  35% {
+    opacity: var(--flash-intensity, 0.18);
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes portfolio-camera-flash {
+  0% {
+    opacity: 0;
+  }
+
+  20% {
+    opacity: var(--flash-intensity, 0.35);
+  }
+
+  45% {
+    opacity: calc(var(--flash-intensity, 0.35) * 0.65);
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes portfolio-shutter-darken {
+  0% {
+    opacity: 0;
+    background: rgba(0, 0, 0, 0);
+  }
+
+  25% {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.18);
+  }
+
+  55% {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.08);
+  }
+
+  100% {
+    opacity: 0;
+    background: rgba(0, 0, 0, 0);
+  }
+}
+
+@keyframes portfolio-shutter-flash {
+  0% {
+    opacity: 0;
+  }
+
+  40% {
+    opacity: calc(var(--flash-intensity, 0.2) * 0.85);
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+.portfolio-image-stage[data-transition-effect='crossfade']
+  .portfolio-image-layer.is-entering {
+  animation:
+    portfolio-crossfade-in var(--transition-duration, 190ms)
+    var(--transition-easing, cubic-bezier(0.22, 1, 0.36, 1)) forwards;
+}
+
+.portfolio-image-stage[data-transition-effect='crossfade']
+  .portfolio-image-layer.is-leaving {
+  animation:
+    portfolio-crossfade-out var(--transition-duration, 190ms)
+    var(--transition-easing, cubic-bezier(0.22, 1, 0.36, 1)) forwards;
+}
+
+.portfolio-image-stage[data-transition-effect='soft-slide']
+  .portfolio-image-layer.is-entering {
+  animation:
+    portfolio-soft-slide-in var(--transition-duration, 190ms)
+    var(--transition-easing, cubic-bezier(0.22, 1, 0.36, 1)) forwards;
+}
+
+.portfolio-image-stage[data-transition-effect='soft-slide']
+  .portfolio-image-layer.is-leaving {
+  animation:
+    portfolio-soft-slide-out var(--transition-duration, 190ms)
+    var(--transition-easing, cubic-bezier(0.22, 1, 0.36, 1)) forwards;
+}
+
+.portfolio-image-stage[data-orientation-change='true']
+  .portfolio-image-layer.is-entering {
+  animation:
+    portfolio-crossfade-in var(--transition-duration, 190ms)
+    var(--transition-easing, cubic-bezier(0.22, 1, 0.36, 1)) forwards;
+}
+
+.portfolio-image-stage[data-orientation-change='true']
+  .portfolio-image-layer.is-leaving {
+  animation:
+    portfolio-crossfade-out var(--transition-duration, 190ms)
+    var(--transition-easing, cubic-bezier(0.22, 1, 0.36, 1)) forwards;
+}
+
+.portfolio-image-stage[data-transition-effect='scale-fade']
+  .portfolio-image-layer.is-entering {
+  animation:
+    portfolio-scale-fade-in var(--transition-duration, 190ms)
+    var(--transition-easing, cubic-bezier(0.22, 1, 0.36, 1)) forwards;
+}
+
+.portfolio-image-stage[data-transition-effect='scale-fade']
+  .portfolio-image-layer.is-leaving {
+  animation:
+    portfolio-scale-fade-out var(--transition-duration, 190ms)
+    var(--transition-easing, cubic-bezier(0.22, 1, 0.36, 1)) forwards;
+}
+
+.portfolio-image-stage[data-transition-effect='film-blink']
+  .portfolio-image-layer.is-entering {
+  animation:
+    portfolio-film-blink-in var(--transition-duration, 180ms)
+    var(--transition-easing, ease-out) forwards;
+}
+
+.portfolio-image-stage[data-transition-effect='film-blink']
+  .portfolio-image-layer.is-leaving {
+  animation:
+    portfolio-film-blink-out var(--transition-duration, 180ms)
+    var(--transition-easing, ease-out) forwards;
+}
+
+.portfolio-image-stage[data-transition-effect='exposure-pulse']
+  .portfolio-transition-overlay.is-active {
+  background:
+    radial-gradient(
+      circle at center,
+      color-mix(in srgb, var(--flash-color, #ffffff) 95%, transparent),
+      color-mix(in srgb, var(--flash-color, #ffffff) 35%, transparent) 45%,
+      transparent 80%
+    );
+  animation:
+    portfolio-exposure-pulse var(--flash-duration, 90ms) ease-out forwards;
+}
+
+.portfolio-image-stage[data-transition-effect='camera-flash']
+  .portfolio-transition-overlay.is-active {
+  background:
+    radial-gradient(
+      circle at center,
+      color-mix(in srgb, var(--flash-color, #ffffff) 92%, transparent),
+      color-mix(in srgb, var(--flash-color, #ffffff) 40%, transparent) 50%,
+      transparent 82%
+    );
+  animation:
+    portfolio-camera-flash var(--flash-duration, 90ms) ease-out forwards;
+}
+
+.portfolio-image-stage[data-transition-effect='shutter-flash']
+  .portfolio-image-layer.is-leaving {
+  animation:
+    portfolio-shutter-darken var(--transition-duration, 180ms) ease-out forwards;
+}
+
+.portfolio-image-stage[data-transition-effect='shutter-flash']
+  .portfolio-transition-overlay.is-active {
+  background:
+    radial-gradient(
+      circle at center,
+      color-mix(in srgb, var(--flash-color, #ffffff) 88%, transparent),
+      transparent 78%
+    );
+  animation:
+    portfolio-shutter-flash var(--flash-duration, 100ms) ease-out forwards;
+  animation-delay: calc(var(--transition-duration, 180ms) * 0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portfolio-image-stage[data-transition-effect='soft-slide']
+    .portfolio-image-layer.is-entering,
+  .portfolio-image-stage[data-transition-effect='soft-slide']
+    .portfolio-image-layer.is-leaving,
+  .portfolio-image-stage[data-transition-effect='scale-fade']
+    .portfolio-image-layer.is-entering,
+  .portfolio-image-stage[data-transition-effect='scale-fade']
+    .portfolio-image-layer.is-leaving {
+    animation-name: portfolio-crossfade-in, portfolio-crossfade-out;
+    transform: none;
+  }
+
+  .portfolio-image-stage[data-transition-effect='soft-slide']
+    .portfolio-image-layer.is-leaving {
+    animation-name: portfolio-crossfade-out;
+  }
+}

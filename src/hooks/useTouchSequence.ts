@@ -1,31 +1,48 @@
 import { useEffect, useRef, type RefObject } from 'react'
+import type { ScrollLabConfig } from '../config/scrollLabConfig'
 
 type UseTouchSequenceOptions = {
   length: number
-  activeIndexRef: RefObject<number>
-  onIndexChange: (index: number) => void
+  config: ScrollLabConfig
+  enqueueSteps: (direction: 1 | -1, stepCount: number) => void
   containerRef: RefObject<HTMLElement | null>
   enabled?: boolean
 }
 
-const BASE_THRESHOLD = 80
-const MIN_THRESHOLD = 30
-const MAX_THRESHOLD = 100
-const MAX_STEPS_PER_GESTURE = 4
 const MIN_SWIPE_DISTANCE = 12
+
+function getTouchStepCount(distance: number, velocity: number, maxSteps: number): number {
+  if (velocity > 2.2 || distance > 420) {
+    return Math.min(3, maxSteps)
+  }
+
+  if (velocity > 1.4 || distance > 260) {
+    return Math.min(2, maxSteps)
+  }
+
+  return 1
+}
+
+function isInsideContainer(target: EventTarget | null, container: HTMLElement): boolean {
+  return target instanceof Node && container.contains(target)
+}
 
 export function useTouchSequence({
   length,
-  activeIndexRef,
-  onIndexChange,
+  config,
+  enqueueSteps,
   containerRef,
   enabled = true,
 }: UseTouchSequenceOptions): void {
   const touchStartY = useRef(0)
   const touchStartTime = useRef(0)
   const accumulatedDelta = useRef(0)
-  const onIndexChangeRef = useRef(onIndexChange)
-  onIndexChangeRef.current = onIndexChange
+  const touchActive = useRef(false)
+  const enqueueStepsRef = useRef(enqueueSteps)
+  const configRef = useRef(config)
+
+  enqueueStepsRef.current = enqueueSteps
+  configRef.current = config
 
   useEffect(() => {
     const container = containerRef.current
@@ -33,68 +50,85 @@ export function useTouchSequence({
       return undefined
     }
 
-    const applySteps = (delta: number, elapsed: number) => {
-      if (Math.abs(delta) < MIN_SWIPE_DISTANCE) {
-        return
-      }
-
-      const velocity = Math.abs(delta) / Math.max(elapsed, 1)
-      const velocityFactor = Math.min(Math.max(velocity / 0.8, 1), 6)
-      const effectiveThreshold = Math.max(
-        MIN_THRESHOLD,
-        Math.min(MAX_THRESHOLD, BASE_THRESHOLD / velocityFactor),
-      )
-
-      let steps = Math.floor(Math.abs(delta) / effectiveThreshold)
-      steps = Math.min(steps, MAX_STEPS_PER_GESTURE)
-
-      if (steps === 0) {
-        steps = 1
-      }
-
-      const direction = delta < 0 ? 1 : -1
-      const current = activeIndexRef.current ?? 0
-      const next = Math.max(0, Math.min(length - 1, current + direction * steps))
-
-      if (next !== current) {
-        onIndexChangeRef.current(next)
-      }
-    }
-
     const onTouchStart = (event: TouchEvent) => {
-      if (event.touches.length !== 1) {
+      if (!isInsideContainer(event.target, container) || event.touches.length !== 1) {
         return
       }
+
+      touchActive.current = true
       touchStartY.current = event.touches[0].clientY
       touchStartTime.current = performance.now()
       accumulatedDelta.current = 0
     }
 
     const onTouchMove = (event: TouchEvent) => {
-      if (event.touches.length !== 1) {
+      if (!touchActive.current || event.touches.length !== 1) {
         return
       }
+
+      if (!isInsideContainer(event.target, container)) {
+        return
+      }
+
       event.preventDefault()
-      const currentY = event.touches[0].clientY
-      accumulatedDelta.current = currentY - touchStartY.current
+      accumulatedDelta.current = event.touches[0].clientY - touchStartY.current
     }
 
-    const onTouchEnd = () => {
+    const finishTouch = (event: TouchEvent) => {
+      if (!touchActive.current) {
+        return
+      }
+
+      touchActive.current = false
+
+      if (!isInsideContainer(event.target, container)) {
+        accumulatedDelta.current = 0
+        return
+      }
+
+      const currentConfig = configRef.current
+      const delta = accumulatedDelta.current
       const elapsed = performance.now() - touchStartTime.current
-      applySteps(accumulatedDelta.current, elapsed)
+
+      if (Math.abs(delta) < MIN_SWIPE_DISTANCE) {
+        accumulatedDelta.current = 0
+        return
+      }
+
+      const velocity = Math.abs(delta) / Math.max(elapsed, 1)
+      const rawDirection: 1 | -1 = delta < 0 ? 1 : -1
+      const direction = currentConfig.invertDirection
+        ? (-rawDirection as 1 | -1)
+        : rawDirection
+
+      let stepCount = 1
+      if (
+        currentConfig.scrollMode === 'gesture-snap' ||
+        currentConfig.oneGestureOnePhoto
+      ) {
+        stepCount = 1
+      } else {
+        stepCount = getTouchStepCount(
+          Math.abs(delta),
+          velocity,
+          currentConfig.maxStepsPerGesture,
+        )
+      }
+
+      enqueueStepsRef.current(direction, stepCount)
       accumulatedDelta.current = 0
     }
 
-    container.addEventListener('touchstart', onTouchStart, { passive: true })
-    container.addEventListener('touchmove', onTouchMove, { passive: false })
-    container.addEventListener('touchend', onTouchEnd, { passive: true })
-    container.addEventListener('touchcancel', onTouchEnd, { passive: true })
+    container.addEventListener('touchstart', onTouchStart, { passive: true, capture: true })
+    container.addEventListener('touchmove', onTouchMove, { passive: false, capture: true })
+    container.addEventListener('touchend', finishTouch, { passive: true, capture: true })
+    container.addEventListener('touchcancel', finishTouch, { passive: true, capture: true })
 
     return () => {
-      container.removeEventListener('touchstart', onTouchStart)
-      container.removeEventListener('touchmove', onTouchMove)
-      container.removeEventListener('touchend', onTouchEnd)
-      container.removeEventListener('touchcancel', onTouchEnd)
+      container.removeEventListener('touchstart', onTouchStart, { capture: true })
+      container.removeEventListener('touchmove', onTouchMove, { capture: true })
+      container.removeEventListener('touchend', finishTouch, { capture: true })
+      container.removeEventListener('touchcancel', finishTouch, { capture: true })
     }
-  }, [activeIndexRef, containerRef, enabled, length])
+  }, [containerRef, enabled, length])
 }

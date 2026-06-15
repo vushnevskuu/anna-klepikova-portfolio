@@ -3,9 +3,13 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
 } from 'react'
 import { photos } from '../data/photos'
+import { getEffectiveTransitionDuration } from '../config/scrollLabConfig'
+import { useGalleryQueue } from '../hooks/useGalleryQueue'
 import { resolveOrientation, useImagePreloader } from '../hooks/useImagePreloader'
+import { useScrollLab } from '../hooks/useScrollLab'
 import { useScrollSequence } from '../hooks/useScrollSequence'
 import { useTouchSequence } from '../hooks/useTouchSequence'
 import { PortfolioCounter } from './PortfolioCounter'
@@ -14,29 +18,38 @@ import { PortfolioImage } from './PortfolioImage'
 import { getPhotoOrientation } from '../utils/getPhotoOrientation'
 
 const DESKTOP_BREAKPOINT = 768
-const CROSSFADE_MS = 200
 
-function getCrossfadeDuration(): number {
-  if (typeof window === 'undefined') {
-    return CROSSFADE_MS
-  }
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    ? 0
-    : CROSSFADE_MS
-}
+type TransitionPhase = 'idle' | 'starting' | 'animating'
+
+const FLASH_EFFECTS = new Set([
+  'exposure-pulse',
+  'camera-flash',
+  'shutter-flash',
+])
 
 export function PortfolioViewer() {
   const containerRef = useRef<HTMLDivElement>(null)
-  const activeIndexRef = useRef(0)
-  const displayIndexRef = useRef(0)
   const transitionTimerRef = useRef<number | null>(null)
+  const performStepGenerationRef = useRef(0)
+  const pendingPerformStepResolveRef = useRef<(() => void) | null>(null)
+  const scrollControlsRef = useRef<{ resetGestureLock: () => void } | null>(null)
 
-  const [activeIndex, setActiveIndex] = useState(0)
+  const focusContainer = useCallback(() => {
+    containerRef.current?.focus({ preventScroll: true })
+  }, [])
+
+  const { config, publishDebugState, isLabEnabled } = useScrollLab()
+  const configRef = useRef(config)
+  configRef.current = config
+
   const [displayIndex, setDisplayIndex] = useState(0)
   const [transitionTo, setTransitionTo] = useState<number | null>(null)
-  const [incomingVisible, setIncomingVisible] = useState(false)
+  const [transitionPhase, setTransitionPhase] = useState<TransitionPhase>('idle')
+  const [overlayActive, setOverlayActive] = useState(false)
   const [isDesktop, setIsDesktop] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia(`(min-width: ${DESKTOP_BREAKPOINT}px)`).matches,
+    () =>
+      typeof window !== 'undefined' &&
+      window.matchMedia(`(min-width: ${DESKTOP_BREAKPOINT}px)`).matches,
   )
   const [orientations, setOrientations] = useState<
     Record<number, 'horizontal' | 'vertical'>
@@ -52,37 +65,131 @@ export function PortfolioViewer() {
     return initial
   })
 
-  activeIndexRef.current = activeIndex
-  displayIndexRef.current = displayIndex
+  const finishPerformStep = useCallback(
+    (generation: number, resolve: () => void) => {
+      if (performStepGenerationRef.current !== generation) {
+        return
+      }
 
-  const { decodePhoto } = useImagePreloader(photos, activeIndex)
+      pendingPerformStepResolveRef.current = null
+      publishDebugState({ isTransitioning: false })
+      resolve()
+    },
+    [publishDebugState],
+  )
 
-  const handleIndexChange = useCallback((index: number) => {
-    setActiveIndex(index)
-  }, [])
+  const performStep = useCallback(
+    (_direction: 1 | -1, nextIndex: number) =>
+      new Promise<void>((resolve) => {
+        pendingPerformStepResolveRef.current?.()
+        pendingPerformStepResolveRef.current = resolve
 
-  const clampAndSetIndex = useCallback((next: number) => {
-    const clamped = Math.max(0, Math.min(photos.length - 1, next))
-    if (clamped !== activeIndexRef.current) {
-      handleIndexChange(clamped)
-    }
-  }, [handleIndexChange])
+        if (transitionTimerRef.current !== null) {
+          window.clearTimeout(transitionTimerRef.current)
+          transitionTimerRef.current = null
+        }
+
+        const generation = performStepGenerationRef.current + 1
+        performStepGenerationRef.current = generation
+
+        const currentConfig = configRef.current
+        const duration = getEffectiveTransitionDuration(currentConfig)
+        const isCut = currentConfig.transitionEffect === 'cut' || duration === 0
+
+        publishDebugState({ isTransitioning: true })
+
+        if (isCut) {
+          setDisplayIndex(nextIndex)
+          setTransitionTo(null)
+          setTransitionPhase('idle')
+          setOverlayActive(false)
+          finishPerformStep(generation, resolve)
+          return
+        }
+
+        setTransitionTo(nextIndex)
+        setTransitionPhase('starting')
+        setOverlayActive(false)
+
+        requestAnimationFrame(() => {
+          if (performStepGenerationRef.current !== generation) {
+            return
+          }
+
+          setTransitionPhase('animating')
+
+          if (FLASH_EFFECTS.has(currentConfig.transitionEffect)) {
+            setOverlayActive(true)
+          }
+
+          transitionTimerRef.current = window.setTimeout(() => {
+            setDisplayIndex(nextIndex)
+            setTransitionTo(null)
+            setTransitionPhase('idle')
+            setOverlayActive(false)
+            transitionTimerRef.current = null
+            finishPerformStep(generation, resolve)
+          }, duration)
+        })
+      }),
+    [finishPerformStep, publishDebugState],
+  )
+
+  const decodePhotoRef = useRef<(index: number) => Promise<boolean>>(
+    async () => true,
+  )
+
+  const { activeIndex, enqueueSteps } = useGalleryQueue({
+    length: photos.length,
+    config,
+    decodePhoto: (index) => decodePhotoRef.current(index),
+    performStep,
+    publishDebugState,
+    onInputReady: () => scrollControlsRef.current?.resetGestureLock(),
+  })
+
+  const { decodePhoto } = useImagePreloader(
+    photos,
+    activeIndex,
+    config.preloadDistance,
+  )
+  decodePhotoRef.current = decodePhoto
 
   useScrollSequence({
     length: photos.length,
-    activeIndexRef,
-    onIndexChange: handleIndexChange,
+    config,
+    enqueueSteps,
     containerRef,
+    publishDebugState,
     enabled: photos.length > 1,
+    onRegisterControls: (controls) => {
+      scrollControlsRef.current = controls
+    },
   })
 
   useTouchSequence({
     length: photos.length,
-    activeIndexRef,
-    onIndexChange: handleIndexChange,
+    config,
+    enqueueSteps,
     containerRef,
     enabled: photos.length > 1,
   })
+
+  useEffect(() => {
+    focusContainer()
+  }, [focusContainer])
+
+  useEffect(() => {
+    if (!isLabEnabled) {
+      return
+    }
+
+    publishDebugState({
+      currentIndex: activeIndex,
+      totalImages: photos.length,
+      scrollMode: config.scrollMode,
+    })
+  }, [activeIndex, config.scrollMode, isLabEnabled, publishDebugState])
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(`(min-width: ${DESKTOP_BREAKPOINT}px)`)
@@ -92,78 +199,35 @@ export function PortfolioViewer() {
   }, [])
 
   useEffect(() => {
-    if (photos.length === 0) {
-      return undefined
+    if (transitionPhase !== 'idle' || transitionTo !== null) {
+      return
     }
 
-    let cancelled = false
-    const target = activeIndex
-
-    void decodePhoto(target).then(() => {
-      if (cancelled || target !== activeIndexRef.current) {
-        return
-      }
-
-      if (target === displayIndexRef.current) {
-        return
-      }
-
-      if (getCrossfadeDuration() === 0) {
-        setDisplayIndex(target)
-        setTransitionTo(null)
-        return
-      }
-
-      setTransitionTo(target)
-    })
-
-    return () => {
-      cancelled = true
-    }
-  }, [activeIndex, decodePhoto])
+    setDisplayIndex(activeIndex)
+  }, [activeIndex, transitionPhase, transitionTo])
 
   useEffect(() => {
-    if (transitionTo === null) {
-      setIncomingVisible(false)
-      return undefined
-    }
-
-    setIncomingVisible(false)
-    const frameId = requestAnimationFrame(() => {
-      setIncomingVisible(true)
-    })
-
-    return () => cancelAnimationFrame(frameId)
-  }, [transitionTo])
-
-  useEffect(() => {
-    if (transitionTo === null) {
-      return undefined
-    }
-
-    const duration = getCrossfadeDuration()
-
-    if (duration === 0) {
-      setDisplayIndex(transitionTo)
-      setTransitionTo(null)
-      return undefined
-    }
-
-    transitionTimerRef.current = window.setTimeout(() => {
-      setDisplayIndex(transitionTo)
-      setTransitionTo(null)
-    }, duration)
-
     return () => {
       if (transitionTimerRef.current !== null) {
         window.clearTimeout(transitionTimerRef.current)
       }
+      pendingPerformStepResolveRef.current?.()
+      pendingPerformStepResolveRef.current = null
     }
-  }, [transitionTo])
+  }, [])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (photos.length <= 1) {
+      if (photos.length <= 1 || event.repeat) {
+        return
+      }
+
+      const target = event.target
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement
+      ) {
         return
       }
 
@@ -171,20 +235,12 @@ export function PortfolioViewer() {
         case 'ArrowDown':
         case 'PageDown':
           event.preventDefault()
-          clampAndSetIndex(activeIndexRef.current + 1)
+          enqueueSteps(1, 1)
           break
         case 'ArrowUp':
         case 'PageUp':
           event.preventDefault()
-          clampAndSetIndex(activeIndexRef.current - 1)
-          break
-        case 'Home':
-          event.preventDefault()
-          clampAndSetIndex(0)
-          break
-        case 'End':
-          event.preventDefault()
-          clampAndSetIndex(photos.length - 1)
+          enqueueSteps(-1, 1)
           break
         default:
           break
@@ -193,7 +249,7 @@ export function PortfolioViewer() {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [clampAndSetIndex])
+  }, [enqueueSteps])
 
   const handleDimensions = useCallback(
     (index: number, naturalWidth: number, naturalHeight: number) => {
@@ -218,7 +274,10 @@ export function PortfolioViewer() {
 
   if (photos.length === 0) {
     return (
-      <main className="portfolio-page portfolio-page--mobile" aria-label="Photography portfolio gallery">
+      <main
+        className="portfolio-page portfolio-page--mobile"
+        aria-label="Photography portfolio gallery"
+      >
         <div className="portfolio-layout">
           <PortfolioHeader layout="mobile" />
           <section className="portfolio-media" aria-label="Photography portfolio">
@@ -229,8 +288,26 @@ export function PortfolioViewer() {
     )
   }
 
-  const orientation = getPhotoOrientation(photos[activeIndex], activeIndex, orientations)
+  const isTransitionActive = transitionTo !== null
+  const layoutIndex = isTransitionActive ? displayIndex : activeIndex
+  const orientation = getPhotoOrientation(photos[layoutIndex], layoutIndex, orientations)
   const layoutClass = isDesktop ? orientation : 'mobile'
+  const isAnimating = transitionPhase === 'animating' && transitionTo !== null
+  const currentPhotoIndex = isAnimating ? transitionTo : displayIndex
+  const isOrientationChange =
+    isAnimating &&
+    transitionTo !== null &&
+    getPhotoLayout(displayIndex) !== getPhotoLayout(transitionTo)
+
+  const stageStyle = {
+    '--transition-duration': `${config.transitionDuration}ms`,
+    '--transition-easing': config.transitionEasing,
+    '--flash-duration': `${config.flashDuration}ms`,
+    '--flash-intensity': config.flashIntensity,
+    '--flash-color': config.flashColor,
+    '--translate-distance': `${config.translateDistance}px`,
+    '--scale-amount': config.scaleAmount,
+  } as CSSProperties
 
   return (
     <main
@@ -238,33 +315,48 @@ export function PortfolioViewer() {
       className={`portfolio-page portfolio-page--${layoutClass}`}
       aria-label="Photography portfolio gallery"
       tabIndex={0}
+      onPointerDown={focusContainer}
     >
       <div className="portfolio-layout">
         <PortfolioHeader layout={isDesktop ? 'desktop' : 'mobile'} />
 
         <section className="portfolio-media" aria-label="Photography portfolio">
-          <div className={`portfolio-image-stage portfolio-image-stage--${layoutClass}`}>
-            <PortfolioImage
-              photo={photos[displayIndex]}
-              visible={transitionTo === null || !incomingVisible}
-              photoLayout={getPhotoLayout(displayIndex)}
-              priority={displayIndex === 0}
-              onDimensions={(width, height) =>
-                handleDimensions(displayIndex, width, height)
-              }
-            />
-
-            {transitionTo !== null && transitionTo !== displayIndex && (
+          <div
+            className={`portfolio-image-stage portfolio-image-stage--${layoutClass}`}
+            data-transition-effect={config.transitionEffect}
+            data-orientation-change={isOrientationChange ? 'true' : undefined}
+            style={stageStyle}
+          >
+            {isAnimating && (
               <PortfolioImage
-                photo={photos[transitionTo]}
-                visible={incomingVisible}
-                photoLayout={getPhotoLayout(transitionTo)}
-                priority={transitionTo === 0}
+                photo={photos[displayIndex]}
+                layerRole="previous"
+                isVisible
+                isLeaving
+                photoLayout={getPhotoLayout(displayIndex)}
+                priority={displayIndex === 0}
                 onDimensions={(width, height) =>
-                  handleDimensions(transitionTo, width, height)
+                  handleDimensions(displayIndex, width, height)
                 }
               />
             )}
+
+            <PortfolioImage
+              photo={photos[currentPhotoIndex]}
+              layerRole="current"
+              isVisible
+              isEntering={isAnimating}
+              photoLayout={getPhotoLayout(currentPhotoIndex)}
+              priority={currentPhotoIndex === 0}
+              onDimensions={(width, height) =>
+                handleDimensions(currentPhotoIndex, width, height)
+              }
+            />
+
+            <div
+              className={`portfolio-transition-overlay${overlayActive ? ' is-active' : ''}`}
+              aria-hidden="true"
+            />
           </div>
         </section>
       </div>

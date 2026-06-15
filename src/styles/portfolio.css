@@ -2,16 +2,19 @@
 :root {
   --color-bg: #ffffff;
   --color-text: #000000;
+  --color-instagram-at: #dd1111;
 
   --font-family: "transat", sans-serif;
-  --font-weight-light: 200;
+  /* Typekit avp5fpz — Transat Light (n3, weight 300) */
+  --font-weight-light: 300;
   --font-size-name: 32px;
   --font-size-contact: 16px;
   --line-height-normal: normal;
   --contact-gap: 10px;
 
-  --page-padding-x: clamp(24px, 3vw, 56px);
-  --page-padding-y: clamp(24px, 4vh, 48px);
+  --page-padding-inline: clamp(32px, 3vw, 48px);
+  --page-padding-top: clamp(24px, 3vh, 32px);
+  --page-padding-bottom: clamp(16px, 2vh, 24px);
   --info-column-width: clamp(180px, 15vw, 240px);
   --columns-gap: clamp(24px, 3vw, 48px);
 
@@ -20,13 +23,14 @@
   --mobile-padding-x: 16px;
 
   --breakpoint-desktop: 768px;
-  --transition-crossfade: 200ms;
-  --transition-crossfade-reduced: 0ms;
+  --transition-gallery: 220ms;
+  --transition-gallery-reduced: 80ms;
+  --transition-gallery-easing: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
   :root {
-    --transition-crossfade: var(--transition-crossfade-reduced);
+    --transition-gallery: var(--transition-gallery-reduced);
   }
 }
 
@@ -49,11 +53,12 @@
     var(--info-column-width)
     minmax(0, 1fr);
   column-gap: var(--columns-gap);
+  align-items: stretch;
   width: 100%;
   height: 100%;
-  padding:
-    var(--page-padding-y)
-    var(--page-padding-x);
+  padding-inline: var(--page-padding-inline);
+  padding-top: var(--page-padding-top);
+  padding-bottom: var(--page-padding-bottom);
 }
 
 .portfolio-info {
@@ -63,6 +68,9 @@
   width: 100%;
   height: 100%;
   min-width: 0;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
 }
 
 .portfolio-name {
@@ -70,7 +78,8 @@
   padding: 0;
   font-family: var(--font-family);
   font-size: var(--font-size-name);
-  font-weight: var(--font-weight-light);
+  font-weight: 300;
+  font-synthesis: none;
   line-height: var(--line-height-normal);
   color: var(--color-text);
   white-space: nowrap;
@@ -81,6 +90,8 @@
   flex-direction: column;
   align-items: flex-start;
   gap: var(--contact-gap);
+  margin: 0;
+  padding: 0;
 }
 
 .portfolio-contacts__item {
@@ -94,6 +105,10 @@
   white-space: nowrap;
 }
 
+.portfolio-contacts__at {
+  color: var(--color-instagram-at);
+}
+
 .portfolio-media {
   position: relative;
   width: 100%;
@@ -101,23 +116,45 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  padding: 0;
+  margin: 0;
 }
 
 .portfolio-image-stage {
   position: absolute;
   inset: 0;
   display: flex;
-  align-items: center;
-  justify-content: flex-start;
   width: 100%;
   height: 100%;
   min-width: 0;
   min-height: 0;
   max-width: none;
   max-height: none;
+  padding: 0;
+  margin: 0;
+}
+
+.portfolio-image-stage--horizontal {
+  align-items: center;
+  justify-content: flex-start;
 }
 
 .portfolio-image-stage--vertical {
+  align-items: center;
+  justify-content: center;
+}
+
+.portfolio-image-layer--horizontal {
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.portfolio-image-layer--vertical {
+  align-items: center;
+  justify-content: center;
+}
+
+.portfolio-image-layer--mobile {
   align-items: center;
   justify-content: center;
 }
@@ -127,41 +164,54 @@
   inset: 0;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   width: 100%;
   height: 100%;
   min-width: 0;
   min-height: 0;
-  transition: opacity var(--transition-crossfade) ease;
-}
-
-.portfolio-image-stage--vertical .portfolio-image-layer {
-  align-items: center;
-  justify-content: center;
-}
-
-.portfolio-image-layer--hidden {
+  max-height: none;
+  padding: 0;
+  margin: 0;
   opacity: 0;
+  transform: none;
   pointer-events: none;
 }
 
-.portfolio-image-layer--visible {
+.portfolio-image-layer.is-active {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .portfolio-image {
   display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+  opacity: 0;
+  background: transparent;
+}
+
+.portfolio-image--loaded {
+  opacity: 1;
+}
+
+.portfolio-image--horizontal {
   width: 100%;
   height: 100%;
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
   object-position: left center;
-  user-select: none;
-  -webkit-user-drag: none;
 }
 
 .portfolio-image--vertical {
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
   object-position: center;
 }
 
@@ -171,6 +221,16 @@
   opacity: 0.5;
   text-align: center;
   padding: 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portfolio-image-layer {
+    transform: none;
+  }
+
+  .portfolio-image-layer.is-active {
+    transform: none;
+  }
 }
 
 @media (max-width: 767px) {
