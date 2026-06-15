@@ -66,7 +66,7 @@ export function PortfolioImage({
           alt={photo.alt}
           width={photo.width}
           height={photo.height}
-          loading="eager"
+          loading={priority ? 'eager' : 'lazy'}
           fetchPriority={priority ? 'high' : 'auto'}
           decoding="async"
           onLoad={(event) => {

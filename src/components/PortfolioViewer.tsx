@@ -276,11 +276,11 @@ export function PortfolioViewer() {
     return (
       <main
         className="portfolio-page portfolio-page--mobile"
-        aria-label="Photography portfolio gallery"
+        aria-label="Anna Klepikova photography portfolio gallery"
       >
         <div className="portfolio-layout">
           <PortfolioHeader layout="mobile" />
-          <section className="portfolio-media" aria-label="Photography portfolio">
+          <section className="portfolio-media" aria-label="Anna Klepikova photography portfolio">
             <p className="portfolio-image__error">No photographs in portfolio.</p>
           </section>
         </div>
@@ -313,14 +313,14 @@ export function PortfolioViewer() {
     <main
       ref={containerRef}
       className={`portfolio-page portfolio-page--${layoutClass}`}
-      aria-label="Photography portfolio gallery"
+      aria-label="Anna Klepikova photography portfolio gallery"
       tabIndex={0}
       onPointerDown={focusContainer}
     >
       <div className="portfolio-layout">
         <PortfolioHeader layout={isDesktop ? 'desktop' : 'mobile'} />
 
-        <section className="portfolio-media" aria-label="Photography portfolio">
+        <section className="portfolio-media" aria-label="Anna Klepikova photography portfolio">
           <div
             className={`portfolio-image-stage portfolio-image-stage--${layoutClass}`}
             data-transition-effect={config.transitionEffect}
