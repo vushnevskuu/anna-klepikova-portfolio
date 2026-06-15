@@ -21,6 +21,7 @@
   --mobile-padding-top: 40px;
   --mobile-padding-bottom: 50px;
   --mobile-padding-x: 16px;
+  --mobile-image-gap: 20px;
 
   --breakpoint-desktop: 768px;
   --transition-gallery: 220ms;
@@ -262,6 +263,7 @@
   .portfolio-name {
     order: 1;
     padding-inline: var(--mobile-padding-x);
+    margin-bottom: var(--mobile-image-gap);
     text-align: center;
     align-self: center;
   }
@@ -277,6 +279,7 @@
   .portfolio-contacts {
     order: 3;
     align-self: center;
+    margin-top: var(--mobile-image-gap);
     padding-inline: var(--mobile-padding-x);
     align-items: center;
     text-align: center;
