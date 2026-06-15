@@ -7,7 +7,7 @@ export function PortfolioHeader({ layout }: PortfolioHeaderProps) {
 
   return (
     <aside className="portfolio-info">
-      <h1 className="portfolio-name">anna_klepikova</h1>
+      <h1 className="portfolio-name">Anna Klepikova</h1>
       <div
         className="portfolio-contacts"
         data-node-id={contactsNodeId}
