@@ -2,8 +2,6 @@
 :root {
   --color-bg: #ffffff;
   --color-text: #000000;
-  --color-instagram-at: #dd1111;
-
   --font-family: "transat", sans-serif;
   /* Typekit avp5fpz — Transat Light (n3, weight 300) */
   --font-weight-light: 300;
@@ -107,7 +105,7 @@
 }
 
 .portfolio-contacts__at {
-  color: var(--color-instagram-at);
+  color: inherit;
 }
 
 .portfolio-media {
