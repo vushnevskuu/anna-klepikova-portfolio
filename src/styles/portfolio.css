@@ -13,8 +13,8 @@
   --contact-gap: 10px;
 
   --page-padding-inline: clamp(32px, 3vw, 48px);
-  --page-padding-top: clamp(24px, 3vh, 32px);
-  --page-padding-bottom: clamp(16px, 2vh, 24px);
+  --page-padding-top: 60px;
+  --page-padding-bottom: 60px;
   --info-column-width: clamp(180px, 15vw, 240px);
   --columns-gap: clamp(24px, 3vw, 48px);
 
