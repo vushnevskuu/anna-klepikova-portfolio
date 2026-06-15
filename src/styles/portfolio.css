@@ -272,7 +272,8 @@
     order: 2;
     flex: 1;
     min-height: 0;
-    width: 100vw;
+    align-self: stretch;
+    width: 100%;
     min-width: 0;
   }
 
