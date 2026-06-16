@@ -11,32 +11,24 @@ type UseTouchSequenceOptions = {
 
 const MIN_SWIPE_DISTANCE = 12
 
-function resolveTouchStepCount(
-  config: ScrollLabConfig,
+function resolveMobileTouchStepCount(
+  maxSteps: number,
   distance: number,
   velocity: number,
 ): number {
-  if (
-    config.oneGestureOnePhoto ||
-    config.scrollMode === 'gesture-snap' ||
-    config.scrollMode === 'cooldown-snap' ||
-    config.scrollMode === 'threshold-snap' ||
-    config.scrollMode === 'raw-wheel'
-  ) {
-    return 1
+  const cap = Math.min(maxSteps, 4)
+  const distanceSteps = Math.floor(distance / 140)
+
+  let velocitySteps = 1
+  if (velocity > 2.8 || distance > 620) {
+    velocitySteps = 4
+  } else if (velocity > 2.0 || distance > 440) {
+    velocitySteps = 3
+  } else if (velocity > 1.2 || distance > 280) {
+    velocitySteps = 2
   }
 
-  if (config.scrollMode === 'velocity-experimental') {
-    if (velocity > 2.2 || distance > 420) {
-      return Math.min(3, config.maxStepsPerGesture)
-    }
-
-    if (velocity > 1.4 || distance > 260) {
-      return Math.min(2, config.maxStepsPerGesture)
-    }
-  }
-
-  return 1
+  return Math.min(cap, Math.max(velocitySteps, distanceSteps))
 }
 
 function isInsideContainer(target: EventTarget | null, container: HTMLElement): boolean {
@@ -125,8 +117,8 @@ export function useTouchSequence({
         ? (-rawDirection as 1 | -1)
         : rawDirection
 
-      const stepCount = resolveTouchStepCount(
-        currentConfig,
+      const stepCount = resolveMobileTouchStepCount(
+        currentConfig.maxStepsPerGesture,
         Math.abs(delta),
         velocity,
       )

@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -64,6 +65,15 @@ export function PortfolioViewer() {
     })
     return initial
   })
+
+  const mobileInteractionConfig = useMemo(
+    () => ({
+      ...config,
+      maxStepsPerGesture: 4,
+    }),
+    [config],
+  )
+  const galleryConfig = isDesktop ? config : mobileInteractionConfig
 
   const finishPerformStep = useCallback(
     (generation: number, resolve: () => void) => {
@@ -141,7 +151,7 @@ export function PortfolioViewer() {
 
   const { activeIndex, enqueueSteps, getPreloadIndices } = useGalleryQueue({
     length: photos.length,
-    config,
+    config: galleryConfig,
     decodePhoto: (index) => decodePhotoRef.current(index),
     performStep,
     publishDebugState,
@@ -170,7 +180,7 @@ export function PortfolioViewer() {
 
   useTouchSequence({
     length: photos.length,
-    config,
+    config: mobileInteractionConfig,
     enqueueSteps,
     containerRef,
     enabled: photos.length > 1 && !isDesktop,
