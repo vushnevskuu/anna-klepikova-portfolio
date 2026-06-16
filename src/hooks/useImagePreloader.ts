@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PortfolioPhoto } from '../data/photos'
 import { getAssetUrl } from '../utils/getAssetUrl'
-import { wrapIndex } from '../utils/wrapIndex'
 
 const NEIGHBOR_RANGE = 2
 
@@ -14,6 +13,7 @@ export function useImagePreloader(
   photos: PortfolioPhoto[],
   activeIndex: number,
   preloadDistance = NEIGHBOR_RANGE,
+  getPreloadIndices?: (distance: number) => number[],
 ): UseImagePreloaderResult {
   const [decodedIndices, setDecodedIndices] = useState<Set<number>>(() => new Set())
   const cacheRef = useRef<Map<number, HTMLImageElement>>(new Map())
@@ -81,15 +81,17 @@ export function useImagePreloader(
   )
 
   useEffect(() => {
-    const indices: number[] = []
-    for (let offset = -preloadDistance; offset <= preloadDistance; offset += 1) {
-      indices.push(wrapIndex(activeIndex + offset, photos.length))
-    }
+    const indices = getPreloadIndices
+      ? getPreloadIndices(preloadDistance)
+      : Array.from({ length: preloadDistance * 2 + 1 }, (_, offset) => {
+          const index = activeIndex + offset - preloadDistance
+          return ((index % photos.length) + photos.length) % photos.length
+        })
 
     indices.forEach((index) => {
       void decodePhoto(index)
     })
-  }, [activeIndex, decodePhoto, photos.length, preloadDistance])
+  }, [activeIndex, decodePhoto, getPreloadIndices, photos.length, preloadDistance])
 
   const isDecoded = useCallback(
     (index: number) => decodedIndices.has(index),

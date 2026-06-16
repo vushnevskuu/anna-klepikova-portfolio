@@ -139,7 +139,7 @@ export function PortfolioViewer() {
     async () => true,
   )
 
-  const { activeIndex, enqueueSteps } = useGalleryQueue({
+  const { activeIndex, enqueueSteps, getPreloadIndices } = useGalleryQueue({
     length: photos.length,
     config,
     decodePhoto: (index) => decodePhotoRef.current(index),
@@ -152,6 +152,7 @@ export function PortfolioViewer() {
     photos,
     activeIndex,
     config.preloadDistance,
+    getPreloadIndices,
   )
   decodePhotoRef.current = decodePhoto
 
@@ -161,7 +162,7 @@ export function PortfolioViewer() {
     enqueueSteps,
     containerRef,
     publishDebugState,
-    enabled: photos.length > 1,
+    enabled: photos.length > 1 && isDesktop,
     onRegisterControls: (controls) => {
       scrollControlsRef.current = controls
     },
@@ -172,7 +173,7 @@ export function PortfolioViewer() {
     config,
     enqueueSteps,
     containerRef,
-    enabled: photos.length > 1,
+    enabled: photos.length > 1 && !isDesktop,
   })
 
   useEffect(() => {

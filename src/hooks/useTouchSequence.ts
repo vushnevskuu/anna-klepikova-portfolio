@@ -1,5 +1,6 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import type { ScrollLabConfig } from '../config/scrollLabConfig'
+import { getEffectiveTransitionDuration } from '../config/scrollLabConfig'
 
 type UseTouchSequenceOptions = {
   length: number
@@ -11,13 +12,29 @@ type UseTouchSequenceOptions = {
 
 const MIN_SWIPE_DISTANCE = 12
 
-function getTouchStepCount(distance: number, velocity: number, maxSteps: number): number {
-  if (velocity > 2.2 || distance > 420) {
-    return Math.min(3, maxSteps)
+function resolveTouchStepCount(
+  config: ScrollLabConfig,
+  distance: number,
+  velocity: number,
+): number {
+  if (
+    config.oneGestureOnePhoto ||
+    config.scrollMode === 'gesture-snap' ||
+    config.scrollMode === 'cooldown-snap' ||
+    config.scrollMode === 'threshold-snap' ||
+    config.scrollMode === 'raw-wheel'
+  ) {
+    return 1
   }
 
-  if (velocity > 1.4 || distance > 260) {
-    return Math.min(2, maxSteps)
+  if (config.scrollMode === 'velocity-experimental') {
+    if (velocity > 2.2 || distance > 420) {
+      return Math.min(3, config.maxStepsPerGesture)
+    }
+
+    if (velocity > 1.4 || distance > 260) {
+      return Math.min(2, config.maxStepsPerGesture)
+    }
   }
 
   return 1
@@ -38,6 +55,8 @@ export function useTouchSequence({
   const touchStartTime = useRef(0)
   const accumulatedDelta = useRef(0)
   const touchActive = useRef(false)
+  const cooldownUntilRef = useRef(0)
+  const lastEnqueueAtRef = useRef(0)
   const enqueueStepsRef = useRef(enqueueSteps)
   const configRef = useRef(config)
 
@@ -89,8 +108,19 @@ export function useTouchSequence({
       const currentConfig = configRef.current
       const delta = accumulatedDelta.current
       const elapsed = performance.now() - touchStartTime.current
+      const now = performance.now()
 
       if (Math.abs(delta) < MIN_SWIPE_DISTANCE) {
+        accumulatedDelta.current = 0
+        return
+      }
+
+      if (now < cooldownUntilRef.current) {
+        accumulatedDelta.current = 0
+        return
+      }
+
+      if (now - lastEnqueueAtRef.current < currentConfig.gestureEndDelay) {
         accumulatedDelta.current = 0
         return
       }
@@ -101,21 +131,26 @@ export function useTouchSequence({
         ? (-rawDirection as 1 | -1)
         : rawDirection
 
-      let stepCount = 1
-      if (
-        currentConfig.scrollMode === 'gesture-snap' ||
-        currentConfig.oneGestureOnePhoto
-      ) {
-        stepCount = 1
-      } else {
-        stepCount = getTouchStepCount(
-          Math.abs(delta),
-          velocity,
-          currentConfig.maxStepsPerGesture,
-        )
-      }
+      const stepCount = resolveTouchStepCount(
+        currentConfig,
+        Math.abs(delta),
+        velocity,
+      )
 
       enqueueStepsRef.current(direction, stepCount)
+      lastEnqueueAtRef.current = now
+
+      if (currentConfig.scrollMode === 'cooldown-snap') {
+        cooldownUntilRef.current =
+          now +
+          Math.max(
+            currentConfig.transitionLockDuration,
+            getEffectiveTransitionDuration(currentConfig),
+          )
+      } else {
+        cooldownUntilRef.current = now + currentConfig.transitionLockDuration
+      }
+
       accumulatedDelta.current = 0
     }
 

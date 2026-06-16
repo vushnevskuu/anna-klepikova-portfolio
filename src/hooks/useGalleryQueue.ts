@@ -7,7 +7,7 @@ import {
 } from 'react'
 import type { ScrollLabConfig, ScrollLabDebugState } from '../config/scrollLabConfig'
 import { getMaxPendingSteps, getStepPauseMs } from '../config/scrollLabConfig'
-import { stepIndex } from '../utils/wrapIndex'
+import { createShuffledGalleryNavigation } from '../utils/shuffleGalleryOrder'
 
 type UseGalleryQueueOptions = {
   length: number
@@ -22,6 +22,7 @@ type UseGalleryQueueResult = {
   activeIndex: number
   activeIndexRef: RefObject<number>
   enqueueSteps: (direction: 1 | -1, stepCount: number) => void
+  getPreloadIndices: (distance: number) => number[]
 }
 
 export function useGalleryQueue({
@@ -32,8 +33,11 @@ export function useGalleryQueue({
   publishDebugState,
   onInputReady,
 }: UseGalleryQueueOptions): UseGalleryQueueResult {
-  const [activeIndex, setActiveIndex] = useState(0)
-  const activeIndexRef = useRef(0)
+  const navigationRef = useRef(createShuffledGalleryNavigation(length))
+  const [activeIndex, setActiveIndex] = useState(() =>
+    navigationRef.current.getCurrentIndex(),
+  )
+  const activeIndexRef = useRef(activeIndex)
   const pendingStepsRef = useRef(0)
   const isTransitioningRef = useRef(false)
   const stepPauseTimerRef = useRef<number | null>(null)
@@ -85,7 +89,7 @@ export function useGalleryQueue({
     isTransitioningRef.current = true
     syncDebug()
 
-    const nextIndex = stepIndex(activeIndexRef.current, direction, length)
+    const nextIndex = navigationRef.current.step(direction)
 
     void decodePhotoRef.current(nextIndex).then(() => {
       setActiveIndex(nextIndex)
@@ -161,9 +165,25 @@ export function useGalleryQueue({
     }
   }, [clearTimers, syncDebug])
 
+  useEffect(() => {
+    navigationRef.current = createShuffledGalleryNavigation(length)
+    const initialIndex = navigationRef.current.getCurrentIndex()
+    setActiveIndex(initialIndex)
+    activeIndexRef.current = initialIndex
+    pendingStepsRef.current = 0
+    isTransitioningRef.current = false
+    clearTimers()
+    syncDebug()
+  }, [clearTimers, length, syncDebug])
+
+  const getPreloadIndices = useCallback((distance: number) => {
+    return navigationRef.current.getPreloadIndices(distance)
+  }, [])
+
   return {
     activeIndex,
     activeIndexRef,
     enqueueSteps,
+    getPreloadIndices,
   }
 }
