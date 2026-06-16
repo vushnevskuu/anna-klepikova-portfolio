@@ -298,7 +298,8 @@ export function PortfolioViewer() {
   const isOrientationChange =
     isAnimating &&
     transitionTo !== null &&
-    getPhotoLayout(displayIndex) !== getPhotoLayout(transitionTo)
+    getPhotoOrientation(photos[displayIndex], displayIndex, orientations) !==
+      getPhotoOrientation(photos[transitionTo], transitionTo, orientations)
 
   const stageStyle = {
     '--transition-duration': `${config.transitionDuration}ms`,

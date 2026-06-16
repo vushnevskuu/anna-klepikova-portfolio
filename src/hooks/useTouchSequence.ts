@@ -1,6 +1,5 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import type { ScrollLabConfig } from '../config/scrollLabConfig'
-import { getEffectiveTransitionDuration } from '../config/scrollLabConfig'
 
 type UseTouchSequenceOptions = {
   length: number
@@ -55,8 +54,8 @@ export function useTouchSequence({
   const touchStartTime = useRef(0)
   const accumulatedDelta = useRef(0)
   const touchActive = useRef(false)
+  const touchStartedInside = useRef(false)
   const cooldownUntilRef = useRef(0)
-  const lastEnqueueAtRef = useRef(0)
   const enqueueStepsRef = useRef(enqueueSteps)
   const configRef = useRef(config)
 
@@ -70,7 +69,13 @@ export function useTouchSequence({
     }
 
     const onTouchStart = (event: TouchEvent) => {
-      if (!isInsideContainer(event.target, container) || event.touches.length !== 1) {
+      if (event.touches.length !== 1) {
+        touchStartedInside.current = false
+        return
+      }
+
+      touchStartedInside.current = isInsideContainer(event.target, container)
+      if (!touchStartedInside.current) {
         return
       }
 
@@ -81,11 +86,7 @@ export function useTouchSequence({
     }
 
     const onTouchMove = (event: TouchEvent) => {
-      if (!touchActive.current || event.touches.length !== 1) {
-        return
-      }
-
-      if (!isInsideContainer(event.target, container)) {
+      if (!touchActive.current || !touchStartedInside.current || event.touches.length !== 1) {
         return
       }
 
@@ -93,17 +94,15 @@ export function useTouchSequence({
       accumulatedDelta.current = event.touches[0].clientY - touchStartY.current
     }
 
-    const finishTouch = (event: TouchEvent) => {
-      if (!touchActive.current) {
+    const finishTouch = () => {
+      if (!touchActive.current || !touchStartedInside.current) {
+        touchActive.current = false
+        touchStartedInside.current = false
         return
       }
 
       touchActive.current = false
-
-      if (!isInsideContainer(event.target, container)) {
-        accumulatedDelta.current = 0
-        return
-      }
+      touchStartedInside.current = false
 
       const currentConfig = configRef.current
       const delta = accumulatedDelta.current
@@ -116,11 +115,6 @@ export function useTouchSequence({
       }
 
       if (now < cooldownUntilRef.current) {
-        accumulatedDelta.current = 0
-        return
-      }
-
-      if (now - lastEnqueueAtRef.current < currentConfig.gestureEndDelay) {
         accumulatedDelta.current = 0
         return
       }
@@ -138,19 +132,7 @@ export function useTouchSequence({
       )
 
       enqueueStepsRef.current(direction, stepCount)
-      lastEnqueueAtRef.current = now
-
-      if (currentConfig.scrollMode === 'cooldown-snap') {
-        cooldownUntilRef.current =
-          now +
-          Math.max(
-            currentConfig.transitionLockDuration,
-            getEffectiveTransitionDuration(currentConfig),
-          )
-      } else {
-        cooldownUntilRef.current = now + currentConfig.transitionLockDuration
-      }
-
+      cooldownUntilRef.current = now + currentConfig.transitionLockDuration
       accumulatedDelta.current = 0
     }
 
