@@ -1,0 +1,3 @@
+public/photos/*.jpg
+playwright-core-*.tgz
+.qa-*.png
